@@ -1,6 +1,8 @@
+
 use crate::{Config, Error as PalletError};
 use codec::{Decode, Encode};
 use frame_support::{weights::Weight, DefaultNoBound};
+use log;
 use pallet_contracts::chain_extension::{
 	ChainExtension, Environment, Ext, InitState, RegisteredChainExtension, Result, RetVal,
 	SysConfig, UncheckedFrom,
@@ -9,7 +11,7 @@ use sp_runtime::traits::Bounded;
 use xcm::prelude::*;
 use xcm_executor::traits::WeightBounds;
 
-type CallOf<T> = <T as SysConfig>::Call;
+type RuntimeCallOf<T> = <T as SysConfig>::RuntimeCall;
 
 #[repr(u16)]
 #[derive(num_enum::TryFromPrimitive)]
@@ -47,7 +49,7 @@ pub struct ValidatedSend {
 
 #[derive(DefaultNoBound)]
 pub struct Extension<T: Config> {
-	prepared_execute: Option<PreparedExecution<CallOf<T>>>,
+	prepared_execute: Option<PreparedExecution<RuntimeCallOf<T>>>,
 	validated_send: Option<ValidatedSend>,
 }
 
@@ -61,29 +63,33 @@ macro_rules! unwrap {
 }
 
 impl<T: Config> ChainExtension<T> for Extension<T>
-where
-	<T as SysConfig>::AccountId: AsRef<[u8; 32]>,
+	where
+		<T as SysConfig>::AccountId: AsRef<[u8; 32]>,
 {
 	fn call<E>(&mut self, mut env: Environment<E, InitState>) -> Result<RetVal>
-	where
-		E: Ext<T = T>,
-		<E::T as SysConfig>::AccountId: UncheckedFrom<<E::T as SysConfig>::Hash> + AsRef<[u8]>,
+		where
+			E: Ext<T = T>,
+			<E::T as SysConfig>::AccountId: UncheckedFrom<<E::T as SysConfig>::Hash> + AsRef<[u8]>,
 	{
 		match Command::try_from(env.func_id()).map_err(|_| PalletError::<T>::InvalidCommand)? {
 			Command::PrepareExecute => {
 				let mut env = env.buf_in_buf_out();
 				let len = env.in_len();
-				let input: VersionedXcm<CallOf<T>> = env.read_as_unbounded(len)?;
+				let input: VersionedXcm<RuntimeCallOf<T>> = env.read_as_unbounded(len)?;
 				let mut xcm =
 					input.try_into().map_err(|_| PalletError::<T>::XcmVersionNotSupported)?;
-				let weight =
-					T::Weigher::weight(&mut xcm).map_err(|_| PalletError::<T>::CannotWeigh)?;
+				let weight = Weight::from_ref_time(
+					T::Weigher::weight(&mut xcm).map_err(|_| PalletError::<T>::CannotWeigh)?,
+				);
 				self.prepared_execute = Some(PreparedExecution { xcm, weight });
 				weight.using_encoded(|w| env.write(w, true, None))?;
 			},
 			Command::Execute => {
-				let input =
-					self.prepared_execute.take().ok_or(PalletError::<T>::PreparationMissing)?;
+				let input = self
+					.prepared_execute
+					.as_ref()
+					.take()
+					.ok_or(PalletError::<T>::PreparationMissing)?;
 				env.charge_weight(input.weight)?;
 				let origin = MultiLocation {
 					parents: 0,
@@ -94,9 +100,9 @@ where
 				};
 				let outcome = T::XcmExecutor::execute_xcm_in_credit(
 					origin,
-					input.xcm,
-					input.weight,
-					input.weight,
+					input.xcm.clone(),
+					input.weight.ref_time(),
+					input.weight.ref_time(),
 				);
 				// revert for anything but a complete excution
 				match outcome {
@@ -126,10 +132,20 @@ where
 				VersionedMultiAsset::from(asset).using_encoded(|a| env.write(a, true, None))?;
 			},
 			Command::Send => {
-				let input =
-					self.validated_send.take().ok_or(PalletError::<T>::PreparationMissing)?;
-				T::XcmRouter::send_xcm(input.dest, input.xcm)
-					.map_err(|_| PalletError::<T>::SendFailed)?;
+				let input = self
+					.validated_send
+					.as_ref()
+					.take()
+					.ok_or(PalletError::<T>::PreparationMissing)?;
+				pallet_xcm::Pallet::<T>::send_xcm(Junctions::Here, input.dest.clone(), input.xcm.clone())
+					.map_err(|e| {
+						log::debug!(
+						target: "Contracts",
+						"Send Failed: {:?}",
+						e
+					);
+						PalletError::<T>::SendFailed
+					})?;
 			},
 			Command::NewQuery => {
 				let mut env = env.buf_in_buf_out();
@@ -141,7 +157,8 @@ where
 					}),
 				};
 				let query_id: u64 =
-					pallet_xcm::Pallet::<T>::new_query(location, Bounded::max_value()).into();
+					pallet_xcm::Pallet::<T>::new_query(location, Bounded::max_value())
+						.into();
 				query_id.using_encoded(|q| env.write(q, true, None))?;
 			},
 			Command::TakeResponse => {
@@ -160,8 +177,8 @@ where
 }
 
 impl<T: Config> RegisteredChainExtension<T> for Extension<T>
-where
-	<T as SysConfig>::AccountId: AsRef<[u8; 32]>,
+	where
+		<T as SysConfig>::AccountId: AsRef<[u8; 32]>,
 {
-	const ID: u16 = 1;
+	const ID: u16 = 10;
 }
