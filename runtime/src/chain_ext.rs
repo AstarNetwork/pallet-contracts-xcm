@@ -73,16 +73,24 @@ impl<T: Config> ChainExtension<T> for Extension<T>
 	{
 		match Command::try_from(env.func_id()).map_err(|_| PalletError::<T>::InvalidCommand)? {
 			Command::PrepareExecute => {
+				log::trace!(target: "xcm::send_xcm", "76");
 				let mut env = env.buf_in_buf_out();
+				log::trace!(target: "xcm::send_xcm", "78");
 				let len = env.in_len();
+				log::trace!(target: "xcm::send_xcm", "80");
 				let input: VersionedXcm<RuntimeCallOf<T>> = env.read_as_unbounded(len)?;
+				log::trace!(target: "xcm::send_xcm", "input: {:?}", &input);
 				let mut xcm =
 					input.try_into().map_err(|_| PalletError::<T>::XcmVersionNotSupported)?;
+				log::trace!(target: "xcm::send_xcm", "XCM: {:?}", &xcm);
 				let weight = Weight::from_ref_time(
 					T::Weigher::weight(&mut xcm).map_err(|_| PalletError::<T>::CannotWeigh)?,
 				);
+				log::trace!(target: "xcm::send_xcm", "89");
 				self.prepared_execute = Some(PreparedExecution { xcm, weight });
+				log::trace!(target: "xcm::send_xcm", "91");
 				weight.using_encoded(|w| env.write(w, true, None))?;
+				log::trace!(target: "xcm::send_xcm", "93");
 			},
 			Command::Execute => {
 				let input = self
@@ -137,6 +145,7 @@ impl<T: Config> ChainExtension<T> for Extension<T>
 					.as_ref()
 					.take()
 					.ok_or(PalletError::<T>::PreparationMissing)?;
+				log::trace!(target: "xcm::send_xcm", "Input validated_send");
 				pallet_xcm::Pallet::<T>::send_xcm(Junctions::Here, input.dest.clone(), input.xcm.clone())
 					.map_err(|e| {
 						log::debug!(
@@ -146,6 +155,7 @@ impl<T: Config> ChainExtension<T> for Extension<T>
 					);
 						PalletError::<T>::SendFailed
 					})?;
+				log::trace!(target: "xcm::send_xcm", "CALLED");
 			},
 			Command::NewQuery => {
 				let mut env = env.buf_in_buf_out();
