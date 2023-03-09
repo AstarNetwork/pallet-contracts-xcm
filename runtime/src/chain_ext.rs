@@ -68,7 +68,6 @@ where
 	fn call<E>(&mut self, mut env: Environment<E, InitState>) -> Result<RetVal>
 	where
 		E: Ext<T = T>,
-		// <E::T as SysConfig>::AccountId: UncheckedFrom<<E::T as SysConfig>::Hash> + AsRef<[u8]>,
 	{
 		match Command::try_from(env.func_id()).map_err(|_| PalletError::<T>::InvalidCommand)? {
 			Command::PrepareExecute => {
@@ -146,7 +145,10 @@ where
 					.ok_or(PalletError::<T>::PreparationMissing)?;
 				log::trace!(target: "xcm::send_xcm", "Input validated_send");
 				pallet_xcm::Pallet::<T>::send_xcm(
-					Junctions::Here,
+					Junctions::X1(Junction::AccountId32 {
+						network: NetworkId::Any,
+						id: *env.ext().caller().as_ref(),
+					}),
 					input.dest.clone(),
 					input.xcm.clone(),
 				)
