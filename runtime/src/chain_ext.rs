@@ -1,11 +1,10 @@
-
 use crate::{Config, Error as PalletError};
 use codec::{Decode, Encode};
 use frame_support::{weights::Weight, DefaultNoBound};
 use log;
 use pallet_contracts::chain_extension::{
 	ChainExtension, Environment, Ext, InitState, RegisteredChainExtension, Result, RetVal,
-	SysConfig, UncheckedFrom,
+	SysConfig,
 };
 use sp_runtime::traits::Bounded;
 use xcm::prelude::*;
@@ -63,13 +62,13 @@ macro_rules! unwrap {
 }
 
 impl<T: Config> ChainExtension<T> for Extension<T>
-	where
-		<T as SysConfig>::AccountId: AsRef<[u8; 32]>,
+where
+	<T as SysConfig>::AccountId: AsRef<[u8; 32]>,
 {
 	fn call<E>(&mut self, mut env: Environment<E, InitState>) -> Result<RetVal>
-		where
-			E: Ext<T = T>,
-			<E::T as SysConfig>::AccountId: UncheckedFrom<<E::T as SysConfig>::Hash> + AsRef<[u8]>,
+	where
+		E: Ext<T = T>,
+		// <E::T as SysConfig>::AccountId: UncheckedFrom<<E::T as SysConfig>::Hash> + AsRef<[u8]>,
 	{
 		match Command::try_from(env.func_id()).map_err(|_| PalletError::<T>::InvalidCommand)? {
 			Command::PrepareExecute => {
@@ -146,15 +145,19 @@ impl<T: Config> ChainExtension<T> for Extension<T>
 					.take()
 					.ok_or(PalletError::<T>::PreparationMissing)?;
 				log::trace!(target: "xcm::send_xcm", "Input validated_send");
-				pallet_xcm::Pallet::<T>::send_xcm(Junctions::Here, input.dest.clone(), input.xcm.clone())
-					.map_err(|e| {
-						log::debug!(
+				pallet_xcm::Pallet::<T>::send_xcm(
+					Junctions::Here,
+					input.dest.clone(),
+					input.xcm.clone(),
+				)
+				.map_err(|e| {
+					log::debug!(
 						target: "Contracts",
 						"Send Failed: {:?}",
 						e
 					);
-						PalletError::<T>::SendFailed
-					})?;
+					PalletError::<T>::SendFailed
+				})?;
 				log::trace!(target: "xcm::send_xcm", "CALLED");
 			},
 			Command::NewQuery => {
@@ -167,8 +170,7 @@ impl<T: Config> ChainExtension<T> for Extension<T>
 					}),
 				};
 				let query_id: u64 =
-					pallet_xcm::Pallet::<T>::new_query(location, Bounded::max_value())
-						.into();
+					pallet_xcm::Pallet::<T>::new_query(location, Bounded::max_value()).into();
 				query_id.using_encoded(|q| env.write(q, true, None))?;
 			},
 			Command::TakeResponse => {
@@ -187,8 +189,8 @@ impl<T: Config> ChainExtension<T> for Extension<T>
 }
 
 impl<T: Config> RegisteredChainExtension<T> for Extension<T>
-	where
-		<T as SysConfig>::AccountId: AsRef<[u8; 32]>,
+where
+	<T as SysConfig>::AccountId: AsRef<[u8; 32]>,
 {
 	const ID: u16 = 10;
 }
