@@ -66,27 +66,16 @@ impl Environment for CustomEnvironment {
 #[ink::contract(env = crate::CustomEnvironment)]
 mod xcm_contract_poc {
     use ink::prelude::vec::Vec;
-    // use scale::Encode;
-    // use sp_runtime::traits::Get;
     pub use xcm::opaque::latest::prelude::{
         Junction, Junctions::X1, MultiLocation, NetworkId::Any, OriginKind, Transact, Xcm, *,
     };
     pub use xcm::{VersionedMultiAsset, VersionedMultiLocation, VersionedResponse, VersionedXcm};
-    // use xcm_builder::Account32Hash;
-    // use xcm_executor::traits::Convert;
-
-    // pub type NativeAccountId = <<sp_runtime::MultiSignature as sp_runtime::traits::Verify>::Signer as sp_runtime::traits::IdentifyAccount>::AccountId;
 
     #[ink(storage)]
     #[derive(Default)]
-    pub struct XcmContractPoC;
-
-    // struct AnyNetwork;
-    // impl Get<NetworkId> for AnyNetwork {
-    //     fn get() -> NetworkId {
-    //         NetworkId::Any
-    //     }
-    // }
+    pub struct XcmContractPoC {
+        call_data: Vec<u8>,
+    }
 
     impl XcmContractPoC {
         #[ink(constructor)]
@@ -94,26 +83,30 @@ mod xcm_contract_poc {
             Default::default()
         }
 
-        // #[ink(message)]
-        // pub fn derived_address(
-        //     &self,
-        //     parachain_id: Option<u32>,
-        //     network: NetworkId,
-        // ) -> NativeAccountId {
-        //     let mut loc = MultiLocation::parent();
+        #[ink(constructor)]
+        pub fn new(call_data: Vec<u8>) -> Self {
+            Self { call_data }
+        }
 
-        //     if let Some(parachain_id) = parachain_id {
-        //         loc.append_with(X1(Parachain(parachain_id))).unwrap();
-        //     }
+        #[ink(message)]
+        pub fn set_call_data(&mut self, call_data: Vec<u8>) {
+            self.call_data = call_data;
+        }
 
-        //     loc.append_with(X1(AccountId32 {
-        //         network,
-        //         id: self.env().account_id().encode().try_into().unwrap(),
-        //     }))
-        //     .unwrap();
+        #[ink(message)]
+        pub fn get_call_data(&self) -> Vec<u8> {
+            self.call_data.clone()
+        }
 
-        //     Account32Hash::<AnyNetwork, NativeAccountId>::convert_ref(&loc).unwrap()
-        // }
+        #[ink(message)]
+        pub fn flip_sby(&mut self) {
+            self.send_message(
+                2000,
+                self.call_data.clone(),
+                Some(100_000_000_000_000_000),
+                Some(10000000000),
+            )
+        }
 
         #[ink(message)]
         pub fn send_message(
@@ -123,7 +116,6 @@ mod xcm_contract_poc {
             max_fees: Option<u128>,
             max_weight: Option<u64>,
         ) {
-            // let caller: [u8; 32] = self.env().caller().encode().try_into().unwrap();
             let max_weight = max_weight.unwrap_or(1_000_000_000);
             let max_fees = max_fees.unwrap_or(100_000_000_000_000_000);
 
@@ -132,10 +124,6 @@ mod xcm_contract_poc {
                 interior: X1(Junction::Parachain(para_id)),
             });
             let versioned_xcm = VersionedXcm::from(Xcm([
-                // DescendOrigin(Junctions::X1(Junction::AccountId32 {
-                //     network: Kusama,
-                //     id: caller,
-                // })),
                 WithdrawAsset((Junctions::Here, max_fees).into()),
                 BuyExecution {
                     fees: (Here, max_fees).into(),
