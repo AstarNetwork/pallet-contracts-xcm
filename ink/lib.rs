@@ -98,15 +98,22 @@ mod xcm_contract_poc {
         #[ink(message)]
         pub fn flip_sby(
             &mut self,
+            // Parachain Id
             para_id: u32,
+            // Contract Account
             account: AccountId,
+            // Gas limit for contract call
             gas_limit: Weight,
+            // Max fees for xcm call
             max_fees_amount: u128,
+            // Max weight for xcm call
             max_weight: u64,
+            // Optional selector for flip() function
+            selector: Option<[u8; 4]>,
         ) {
             let mut data: Vec<u8> = Vec::new();
             // selctor for `flip()` method
-            let mut selector: Vec<u8> = [0x9b, 0xae, 0x9d, 0x5e].into();
+            let mut selector: Vec<u8> = selector.unwrap_or([0x63, 0x3a, 0xa5, 0x51]).into();
             let account = account.encode().try_into().unwrap();
             data.append(&mut selector);
 
