@@ -1625,6 +1625,7 @@ version = "0.1.2"
 dependencies = [
  "frame-support",
  "frame-system",
+ "hex",
  "log",
  "num_enum",
  "pallet-contracts",
