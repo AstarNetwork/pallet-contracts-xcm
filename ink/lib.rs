@@ -1,6 +1,8 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 
 use ink::env::{chain_extension::FromStatusCode, Environment};
+use ink::prelude::vec::Vec;
+
 use scale::{Decode, Encode};
 pub use xcm::{VersionedMultiAsset, VersionedMultiLocation, VersionedResponse, VersionedXcm};
 
@@ -47,6 +49,15 @@ pub trait XCMExtension {
 
     #[ink(extension = 0x00A0005, handle_status = true)]
     fn take_response(query_id: u64) -> Result<VersionedResponse, Error>;
+
+    #[ink(extension = 0x00A0006, handle_status = true)]
+    fn contract_call(
+        dest: VersionedMultiLocation,
+        data: Vec<u8>,
+        gas_limit: sp_weights::Weight,
+        max_fees: VersionedMultiAsset,
+        max_weight: u64,
+    ) -> u64;
 }
 
 pub enum CustomEnvironment {}
@@ -66,6 +77,9 @@ impl Environment for CustomEnvironment {
 #[ink::contract(env = crate::CustomEnvironment)]
 mod xcm_contract_poc {
     use ink::prelude::vec::Vec;
+    use scale::Encode;
+    use sp_weights::Weight;
+
     pub use xcm::opaque::latest::prelude::{
         Junction, Junctions::X1, MultiLocation, NetworkId::Any, OriginKind, Transact, Xcm, *,
     };
@@ -73,39 +87,46 @@ mod xcm_contract_poc {
 
     #[ink(storage)]
     #[derive(Default)]
-    pub struct XcmContractPoC {
-        call_data: Vec<u8>,
-    }
+    pub struct XcmContractPoC;
 
     impl XcmContractPoC {
         #[ink(constructor)]
-        pub fn default() -> Self {
-            Default::default()
-        }
-
-        #[ink(constructor)]
-        pub fn new(call_data: Vec<u8>) -> Self {
-            Self { call_data }
+        pub fn new() -> Self {
+            Self {}
         }
 
         #[ink(message)]
-        pub fn set_call_data(&mut self, call_data: Vec<u8>) {
-            self.call_data = call_data;
-        }
+        pub fn flip_sby(
+            &mut self,
+            para_id: u32,
+            account: AccountId,
+            gas_limit: Weight,
+            max_fees_amount: u128,
+            max_weight: u64,
+        ) {
+            let mut data: Vec<u8> = Vec::new();
+            // selctor for `flip()` method
+            let mut selector: Vec<u8> = [0x9b, 0xae, 0x9d, 0x5e].into();
+            let account = account.encode().try_into().unwrap();
+            data.append(&mut selector);
 
-        #[ink(message)]
-        pub fn get_call_data(&self) -> Vec<u8> {
-            self.call_data.clone()
-        }
+            let fee_asset = (Parent, Parachain(para_id));
+            let contract_dest = (
+                Parent,
+                Parachain(para_id),
+                AccountId32 {
+                    network: Any,
+                    id: account,
+                },
+            );
 
-        #[ink(message)]
-        pub fn flip_sby(&mut self) {
-            self.send_message(
-                2000,
-                self.call_data.clone(),
-                Some(100_000_000_000_000_000),
-                Some(10000000000),
-            )
+            let dest = contract_dest.into();
+            let max_fees = (fee_asset, max_fees_amount).into();
+
+            let _ = self
+                .env()
+                .extension()
+                .contract_call(dest, data, gas_limit, max_fees, max_weight);
         }
 
         #[ink(message)]
